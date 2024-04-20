@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useEffect } from 'react';
+import React from 'react';
+import { useQuery } from '@tanstack/react-query';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -19,7 +20,6 @@ import Paper from '@mui/material/Paper';
 import {BannerTop, Footer, RankingZoom} from '@/components';
 import { useTheme } from '@mui/material';
 import { v4 as uuidv4 } from 'uuid';
-import { fetchWithRetry } from "@/utils/fetchWithRetry";
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import FormControl from '@mui/material/FormControl';
@@ -108,27 +108,36 @@ function TablePaginationActions(props: TablePaginationActionsProps) {
   );
 }
 
-async function getPlayers(selectedOption: string | null): Promise<any> {
-  try {
-    let url = `${process.env.NEXT_PUBLIC_API_URL}/api/players?sort=points:desc&populate=*`;
-    if (selectedOption) {
-      url += `&filters[groups][$eq]=${encodeURIComponent(selectedOption)}`;
-    }
-
-    const res = await fetchWithRetry(url);
-    return res;
-  } catch (error) {
-    console.error('There was a problem with the fetch operation:', error);
-    return null;
+async function getPlayers(selectedOption: string | null): Promise<Player[]> {
+  if (!selectedOption) {
+    throw new Error("Selected option is required");
   }
+
+  let url = `${process.env.NEXT_PUBLIC_API_URL}/api/players?sort=points:desc&populate=*`;
+  if (selectedOption) {
+    url += `&filters[groups][$eq]=${encodeURIComponent(selectedOption)}`;
+  }
+
+  const response = await fetch(url);
+  if(!response.ok) {
+    throw new Error('Network response was not ok');
+  }
+  const result = await response.json();
+  return result.data;
 }
 
 export default function Home() {
   const isTabletLand = useMediaQuery('(min-width:975px)');
   const [page, setPage] = React.useState(0);
   const [rowsPerPage, setRowsPerPage] = React.useState(10);
-  const [players, setPlayers] = React.useState<Player[]>([]);
   const [group, setGroup] = React.useState('Grupo das 18');
+
+  const { data } = useQuery({ 
+    queryKey: ['beachPlayers', group], 
+    queryFn: () => getPlayers(group),
+    retry: 2 
+  });
+  const players = data || [];
 
   const handleChange = (event: SelectChangeEvent) => {
     setGroup(event.target.value as string);
@@ -151,17 +160,6 @@ export default function Home() {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
-
-  useEffect(() => {
-    getPlayers(group).then((data) => {
-      if (data) {
-        console.log(data.data)
-        setPlayers(data.data);
-      } else {
-        console.error('No data received from API');
-      }
-    });
-  }, [group]);
 
   return (
     <main className={styles.main}>
